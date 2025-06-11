@@ -1,45 +1,43 @@
-import os
-import requests
-from dotenv import load_dotenv
-from fastapi import FastAPI, File, UploadFile
-from fastapi.responses import JSONResponse
-from fastapi.middleware.cors import CORSMiddleware
+from fastapi import FastAPI
+from pydantic import BaseModel
+from contextlib import asynccontextmanager
+from rag.loader import load_user_documents
+from rag.vector_store import create_vectorstore, get_vectorstore
+from rag.qa_chain import get_rag_chain
 
-load_dotenv()
+# Define the lifespan context
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup logic: load user data and initialize vector DB
+    docs = load_user_documents("data/user_notes.txt")
+    create_vectorstore(docs)
+    yield
+    # Shutdown logic (optional): cleanup or close connections here
 
-app = FastAPI()
+# Create FastAPI app with lifespan handler
+app = FastAPI(lifespan=lifespan)
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY")
+# Input model for query
+class QueryInput(BaseModel):
+    query: str
 
-@app.post("/transcribe")
-async def transcribe_audio(file: UploadFile = File(...)):
-    # Read file content
-    audio_bytes = await file.read()
+# RAG query endpoint
+@app.post("/rag-query")
+def query_rag(data: QueryInput):
+    vectorstore = get_vectorstore()
 
-    # Send to ElevenLabs API
-    response = requests.post(
-        url="https://api.elevenlabs.io/v1/speech-to-text",
-        headers={"xi-api-key": ELEVENLABS_API_KEY},
-        files={"file": (file.filename, audio_bytes, file.content_type)},
-        data={
-            "model_id": "scribe_v1",
-            "diarize": "true",
-            "language_code": "en",
-            "tag_audio_events": "true"
+    # Handle empty vector store
+    if vectorstore._collection.count() == 0:
+        return {
+            "answer": "I couldn't find any past plans to reference. Try recording or saving a plan first.",
+            "sources": []
         }
-    )
 
-    if response.ok:
-        return JSONResponse(content=response.json())
-    else:
-        return JSONResponse(
-            status_code=response.status_code,
-            content={"error": response.text}
-        )
+    # Run RetrievalQA chain
+    qa = get_rag_chain()
+    result = qa.invoke({"query": data.query})
+
+    return {
+        "answer": result["result"],
+        "sources": [doc.metadata.get("source", "N/A") for doc in result["source_documents"]]
+    }

@@ -6,7 +6,10 @@ import tempfile
 from rag.loader import load_user_documents, UnsupportedFileTypeError
 from rag.vector_store import create_vectorstore, get_vectorstore
 from rag.qa_chain import get_rag_chain
+import whisper
 
+
+WHISPER_MODEL = whisper.load_model("base")
 # Define the lifespan context
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -70,3 +73,19 @@ def query_rag(data: QueryInput):
         "answer": result["result"],
         "sources": [doc.metadata.get("source", "N/A") for doc in result["source_documents"]]
     }
+
+@app.post("/transcribe-audio")
+async def transcribe_audio(file:UploadFile = File(...)):
+    with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(file.filename)[1]) as temp_file:
+        temp_file.write(await file.read())
+        audio_temp_file = temp_file.name
+        
+    transcription = WHISPER_MODEL.transcribe(audio_temp_file)
+    transcribed_text = transcription["text"]
+    
+    os.remove(audio_temp_file)
+    
+    qa_result = query_rag(QueryInput(query=transcribed_text))
+    
+    return qa_result
+    

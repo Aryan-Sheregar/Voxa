@@ -13,3 +13,7 @@ python-magic
 llama-cpp-python
 langchain-ollama
 langchain-chroma
+openai-whisper
+python-jose[cryptography]
+passlib[bcrypt]
+fastapi-security

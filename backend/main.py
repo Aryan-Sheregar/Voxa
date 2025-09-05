@@ -1,4 +1,5 @@
 from fastapi import FastAPI, UploadFile, File, HTTPException, status
+from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import BaseModel
 from contextlib import asynccontextmanager
 import os
@@ -7,6 +8,12 @@ from rag.loader import load_user_documents, UnsupportedFileTypeError
 from rag.vector_store import create_vectorstore, get_vectorstore
 from rag.qa_chain import get_rag_chain
 import whisper
+from services.auth_service import authenticate_user, create_access_token, ACCESS_TOKEN_EXPIRE_MINUTES, Token
+from services.auth_service import get_user, oauth2_scheme, User as AuthUser
+from database import get_db
+from sqlmodel import Session
+from datetime import timedelta
+from fastapi import Depends
 
 
 WHISPER_MODEL = whisper.load_model("base")
@@ -88,4 +95,22 @@ async def transcribe_audio(file:UploadFile = File(...)):
     qa_result = query_rag(QueryInput(query=transcribed_text))
     
     return qa_result
+
+@app.post("/token", response_model=Token)
+async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+    user = authenticate_user(db, form_data.username, form_data.password)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect username or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token = create_access_token(
+        data={"sub": user.username}, expires_delta=access_token_expires
+    )
+    
+    return {"access_token": access_token, "token_type": "bearer"}
+
     

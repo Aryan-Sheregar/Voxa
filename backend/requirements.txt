@@ -17,3 +17,4 @@ openai-whisper
 python-jose[cryptography]
 passlib[bcrypt]
 fastapi-security
+sqlmodel

@@ -7,19 +7,13 @@ from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from fastapi import Depends, HTTPException, status
 import os
 from dotenv import load_dotenv
+from sqlmodel import Session, select
+from database import User
 
 load_dotenv()
 ALGORITHM = "HS256"
 SECRET_KEY = os.environ.get("SECRET_KEY_AUTH")
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
-
-fake_users_db = {
-    "testuser": {
-        "username": "testuser",
-        "hashed_password": "$2b$12$KIXQ1h8fH6r5Z9e1Z5b8OeF6k1J8y7G9j",
-        "disabled": False,
-    }
-}
 
 class Token(BaseModel):
     access_token: str
@@ -44,14 +38,15 @@ def verify_password(normal_password, hashed_password):
 def get_password_hash(password):
     return pwd_context.hash(password)
 
-def get_user(db, username: str):
-    pass
+def get_user(db:Session, username: str):
+    user = db.exec(select(User).where(User.username == username)).first()
+    return user
 
-def authenticate_user(db, username: str, password: str):
-    #Access the sqlite3 db (store the user's data in user)
+def authenticate_user(db: Session, username: str, password: str):
+    user = get_user(db, username)
     if not user:
         return False
-    if not verify_password(password,user.hash_password):
+    if not verify_password(password,user.hashed_password):
         return False
     
     return user

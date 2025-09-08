@@ -9,7 +9,7 @@ from rag.vector_store import create_vectorstore, get_vectorstore
 from rag.qa_chain import get_rag_chain
 import whisper
 from services.auth_service import authenticate_user, create_access_token, ACCESS_TOKEN_EXPIRE_MINUTES, Token
-from services.auth_service import get_user, oauth2_scheme, User as AuthUser
+from services.auth_service import get_user, oauth2_scheme, AuthUser
 from database import get_db
 from sqlmodel import Session
 from datetime import timedelta

@@ -8,7 +8,7 @@ from fastapi import Depends, HTTPException, status
 import os
 from dotenv import load_dotenv
 from sqlmodel import Session, select
-from database import User
+from database import User as DBUser 
 
 load_dotenv()
 ALGORITHM = "HS256"
@@ -22,15 +22,15 @@ class Token(BaseModel):
 class TokenData(BaseModel):
     username: Optional[str] = None
     
-class User(BaseModel):
+class AuthUser(BaseModel):
     username: str
     disabled: Optional[bool] = None
     
-class UserInDB(User):
+class UserInDB(AuthUser):
     hashed_password: str
     
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto") #bcrypt is a hashing algorithm used for hashing our passwords
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token") #It is an endpoint where the user will send their username and password to get a token.
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
 def verify_password(normal_password, hashed_password):
     return pwd_context.verify(normal_password,hashed_password)
@@ -42,7 +42,7 @@ def get_user(db:Session, username: str):
     """
     Does: Queries the DB to get a user by username.
     """
-    user = db.exec(select(User).where(User.username == username)).first()
+    user = db.exec(select(DBUser).where(DBUser.username == username)).first()
     return user
 
 def authenticate_user(db: Session, username: str, password: str):
@@ -92,7 +92,7 @@ async def get_current_user(token: str = Depends(oauth2_scheme), db: Session = De
         raise credentials_exception
     return user
 
-async def get_current_active_user(current_user: User = Depends(get_current_user)):
+async def get_current_active_user(current_user: AuthUser = Depends(get_current_user)):
     """
     Does: It checks if the user is active or not.
     """

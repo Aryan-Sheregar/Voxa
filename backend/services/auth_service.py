@@ -54,7 +54,8 @@ def authenticate_user(db: Session, username: str, password: str):
         return False
     if not verify_password(password,user.hashed_password):
         return False
-    
+    if user.disabled:
+        return False
     return user
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):

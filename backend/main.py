@@ -10,7 +10,8 @@ from rag.qa_chain import get_rag_chain
 import whisper
 from services.auth_service import authenticate_user, create_access_token, ACCESS_TOKEN_EXPIRE_MINUTES, Token
 from services.auth_service import get_user, oauth2_scheme, AuthUser
-from database import get_db
+from services.auth_service import get_password_hash
+from database import get_db, User as DBuser
 from sqlmodel import Session
 from datetime import timedelta
 from fastapi import Depends
@@ -31,6 +32,25 @@ app = FastAPI(lifespan=lifespan)
 # Input model for file upload
 class UploadFileResponse(BaseModel):
     message: str
+
+class UserCreate(BaseModel):
+    username: str
+    password: str
+    
+
+@app.post("/signup", status_code=status.HTTP_201_CREATED)
+async def signup(user: UserCreate, db: Session = Depends(get_db)):
+    if get_user(db, user.username):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Username already registered"
+        )
+
+    hashed_password = get_password_hash(user.password)
+    new_user = DBuser(username=user.username, hashed_password=hashed_password)
+    db.add(new_user)
+    db.commit()
+    db.refresh(new_user)
 
 # Endpoint for uploading and indexing documents
 @app.post("/upload-document", response_model=UploadFileResponse)

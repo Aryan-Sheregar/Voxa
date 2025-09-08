@@ -1,4 +1,5 @@
 from fastapi import FastAPI, UploadFile, File, HTTPException, status
+from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import BaseModel
 from contextlib import asynccontextmanager
 import os
@@ -6,7 +7,17 @@ import tempfile
 from rag.loader import load_user_documents, UnsupportedFileTypeError
 from rag.vector_store import create_vectorstore, get_vectorstore
 from rag.qa_chain import get_rag_chain
+import whisper
+from services.auth_service import authenticate_user, create_access_token, ACCESS_TOKEN_EXPIRE_MINUTES, Token
+from services.auth_service import get_user, oauth2_scheme, AuthUser
+from services.auth_service import get_password_hash
+from database import get_db, User as DBuser
+from sqlmodel import Session
+from datetime import timedelta
+from fastapi import Depends
 
+
+WHISPER_MODEL = whisper.load_model("base")
 # Define the lifespan context
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -21,6 +32,25 @@ app = FastAPI(lifespan=lifespan)
 # Input model for file upload
 class UploadFileResponse(BaseModel):
     message: str
+
+class UserCreate(BaseModel):
+    username: str
+    password: str
+    
+
+@app.post("/signup", status_code=status.HTTP_201_CREATED)
+async def signup(user: UserCreate, db: Session = Depends(get_db)):
+    if get_user(db, user.username):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Username already registered"
+        )
+
+    hashed_password = get_password_hash(user.password)
+    new_user = DBuser(username=user.username, hashed_password=hashed_password)
+    db.add(new_user)
+    db.commit()
+    db.refresh(new_user)
 
 # Endpoint for uploading and indexing documents
 @app.post("/upload-document", response_model=UploadFileResponse)
@@ -70,3 +100,37 @@ def query_rag(data: QueryInput):
         "answer": result["result"],
         "sources": [doc.metadata.get("source", "N/A") for doc in result["source_documents"]]
     }
+
+@app.post("/transcribe-audio")
+async def transcribe_audio(file:UploadFile = File(...)):
+    with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(file.filename)[1]) as temp_file:
+        temp_file.write(await file.read())
+        audio_temp_file = temp_file.name
+        
+    transcription = WHISPER_MODEL.transcribe(audio_temp_file)
+    transcribed_text = transcription["text"]
+    
+    os.remove(audio_temp_file)
+    
+    qa_result = query_rag(QueryInput(query=transcribed_text))
+    
+    return qa_result
+
+@app.post("/token", response_model=Token)
+async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+    user = authenticate_user(db, form_data.username, form_data.password)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect username or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token = create_access_token(
+        data={"sub": user.username}, expires_delta=access_token_expires
+    )
+    
+    return {"access_token": access_token, "token_type": "bearer"}
+
+    

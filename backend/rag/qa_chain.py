@@ -18,7 +18,7 @@ def get_rag_chain():
     retriever = vectorstore.as_retriever()
     
     # Create the LLM instance
-    llm = OllamaLLM(model="llama3.1")
+    llm = OllamaLLM(model="gemma3:12b")
     
     # Define the prompt template with a system prompt and a placeholder for the user query
     prompt_template = ChatPromptTemplate.from_messages(
